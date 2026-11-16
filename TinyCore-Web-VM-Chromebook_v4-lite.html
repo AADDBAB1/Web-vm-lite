@@ -1,0 +1,1112 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TinyCore Web VM — Chromebook</title>
+<style>
+*{box-sizing:border-box}
+:root{font-family:Arial,Helvetica,sans-serif;background:#0e1117;color:#e8edf3;color-scheme:dark}
+body{margin:0;min-height:100vh;background:radial-gradient(circle at top,#172033,#0e1117 55%)}
+header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:18px 22px;border-bottom:1px solid #293241;background:#111722}
+h1,h2,h3,p{margin-top:0}
+h1{margin-bottom:4px;font-size:24px}
+h3{margin:18px 0 8px}
+header p{margin:0;color:#aeb8c5}
+.status{padding:8px 12px;border:1px solid #394557;border-radius:999px;background:#192231;color:#cbd5e1;white-space:nowrap}
+main{width:min(1180px,96%);margin:18px auto;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.panel{background:#141a24;border:1px solid #2a3443;border-radius:14px;padding:16px;box-shadow:0 10px 30px #0004}
+.screen-panel,.help,.msg-wrap{grid-column:1/-1}
+label{display:block;font-weight:700;margin:12px 0}
+label.check{display:flex;align-items:center;gap:8px;font-weight:400;margin:10px 0}
+label.check input{width:auto;margin:0}
+input[type=file],select{width:100%;margin-top:7px;padding:10px;border-radius:8px;border:1px solid #3a4657;background:#0e141d;color:#e8edf3}
+button{border:1px solid #45546a;border-radius:9px;padding:10px 13px;background:#202b3b;color:#fff;cursor:pointer;font-weight:700}
+button:hover:not(:disabled){background:#2a384c}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.danger{border-color:#7a3340;background:#35202a}
+button.danger:hover:not(:disabled){background:#4a2733}
+.buttons{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.usb-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end}
+.hint{font-size:13px;line-height:1.5;color:#9ca9b8}
+.file-list{max-height:180px;overflow:auto;border:1px dashed #3a4657;border-radius:9px;padding:10px;margin-top:10px;font-size:13px}
+.file-item{padding:5px 0;border-bottom:1px solid #252e3b}
+.file-item:last-child{border-bottom:0}
+.screen-title{display:flex;justify-content:space-between;gap:10px;align-items:center}
+.screen-title span{font-size:12px;color:#91a0b2}
+#screen_container{width:100%;min-height:480px;display:flex;align-items:center;justify-content:center;background:#000;border-radius:10px;overflow:auto;border:1px solid #364152;outline:none}
+#screen_container:focus{border-color:#5b8def}
+#screen_container canvas{image-rendering:auto;max-width:100%;height:auto}
+#screen_container:fullscreen{width:100vw;height:100vh;min-height:100vh;border-radius:0;border:0}
+#screen_container:fullscreen canvas{max-width:100%;max-height:100%;image-rendering:pixelated}
+#fullscreenBtn{white-space:nowrap}
+.state-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.state-row button,.state-row label{margin:0}
+.state-status{margin-top:8px;font-size:.9rem}
+.network-status,.box{margin-top:10px;padding:10px;border:1px solid #334155;border-radius:9px;background:#0d1520;font-size:13px;line-height:1.45}
+.screen-text{white-space:pre;font:14px monospace;line-height:14px;color:#ddd}
+code{background:#0a0e14;border:1px solid #293241;border-radius:5px;padding:2px 5px}
+li{margin:8px 0;line-height:1.45}
+.bar{height:10px;border-radius:99px;background:#0a0e14;border:1px solid #2a3443;overflow:hidden;margin:8px 0 4px}
+.bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#3b82f6,#22d3ee);transition:width .3s}
+.msg{padding:11px 14px;border-radius:10px;border:1px solid #334155;background:#0d1520;font-size:14px;line-height:1.45}
+.msg.err{border-color:#7a3340;background:#2a1820;color:#ffd0d6}
+.msg.warn{border-color:#7a6a33;background:#2a2518;color:#ffe9a8}
+.msg.ok{border-color:#2f6b45;background:#15271c;color:#c8f3d6}
+.msg[hidden]{display:none}
+details{margin-top:12px}
+summary{cursor:pointer;font-weight:700}
+footer{width:min(1180px,96%);margin:0 auto 24px;display:flex;justify-content:space-between;gap:20px;color:#7f8da0;font-size:12px}
+@media(max-width:800px){main{grid-template-columns:1fr}.screen-panel,.help,.msg-wrap{grid-column:auto}.screen-title{display:block}.screen-title span{display:block;margin-top:6px}footer{display:block}.usb-row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>TinyCore Web VM</h1>
+    <p>Máquina virtual x86 no navegador — ISO/IMG, disco virtual persistente e pendrive</p>
+  </div>
+  <div id="status" class="status">Parada</div>
+</header>
+
+<main>
+  <div class="msg-wrap"><div id="msg" class="msg" hidden role="status"></div></div>
+
+  <section class="panel controls">
+    <h2>Máquina virtual</h2>
+
+    <label>Mídia de boot (ISO, IMG)
+      <input id="mediaFile" type="file" accept=".iso,.img,.ima,.dsk,.vfd,.flp,.bin">
+    </label>
+    <div class="usb-row">
+      <label style="margin:0">Tipo da mídia
+        <select id="mediaKind">
+          <option value="auto" selected>Detectar automaticamente</option>
+          <option value="cd">CD/DVD-ROM (ISO)</option>
+          <option value="floppy">Disquete (.img)</option>
+          <option value="hd">Disco rígido (.img) — importar para o disco virtual</option>
+        </select>
+      </label>
+      <label class="check" style="margin:0 0 10px"><input id="noCd" type="checkbox"> Sem CD</label>
+    </div>
+    <div id="mediaInfo" class="hint"></div>
+
+    <label>Disquete de boot (opcional, .img)
+      <input id="floppyFile" type="file" accept=".img,.ima,.dsk,.vfd,.flp">
+    </label>
+
+    <div class="usb-row">
+      <label style="margin:0">RAM da VM
+        <select id="ram">
+          <option value="67108864">64 MB (Windows 95/98)</option>
+          <option value="134217728">128 MB</option>
+          <option value="268435456">256 MB</option>
+          <option value="536870912" selected>512 MB</option>
+          <option value="805306368">768 MB (máximo)</option>
+        </select>
+      </label>
+      <label style="margin:0">Ordem de boot
+        <select id="bootOrder">
+          <option value="auto" selected>Automática</option>
+          <option value="cd">CD primeiro (instalar/reinstalar)</option>
+          <option value="hd">Disco primeiro</option>
+        </select>
+      </label>
+    </div>
+
+    <label>🌐 Internet da VM
+      <select id="networkMode">
+        <option value="relay" selected>Internet — Ethernet virtual (NE2000)</option>
+        <option value="off">Desativada</option>
+      </select>
+    </label>
+    <div id="networkStatus" class="network-status">🌐 Ethernet virtual pronta — será conectada ao iniciar.</div>
+
+    <div class="buttons">
+      <button id="start">▶ Iniciar VM</button>
+      <button id="pause" disabled>⏸ Pausar</button>
+      <button id="reset" disabled title="Equivale ao botão reset do PC: reinicia o sistema e mantém o disco, a mídia e as configurações.">🔄 Reiniciar</button>
+      <button id="cad" disabled title="Envia Ctrl+Alt+Del para o sistema convidado.">Ctrl+Alt+Del</button>
+      <button id="stop" disabled class="danger" title="Desliga a VM. O disco virtual continua salvo.">⏻ Parar</button>
+    </div>
+    <p class="hint" style="margin-top:10px"><b>Reiniciar</b> só reinicia o sistema (como o botão reset de um PC) — nada é apagado. <b>Parar</b> desliga a VM, mas o disco virtual continua salvo no navegador.</p>
+
+    <h3>📸 Estado da VM</h3>
+    <div class="state-row">
+      <button id="saveState" type="button" disabled>💾 Salvar estado</button>
+      <label>📂 Restaurar estado
+        <input id="stateFile" type="file" accept=".v86state,.bin,application/octet-stream">
+      </label>
+    </div>
+    <div id="stateStatus" class="state-status hint">Disponível quando a VM roda sem disco virtual (modo live CD). Com disco virtual, tudo já é salvo automaticamente.</div>
+  </section>
+
+  <section class="panel disk">
+    <h2>💽 Disco virtual (instalar e dar boot)</h2>
+    <p class="hint">Um disco IDE de até <b>1,5 GB</b> (<code>/dev/hda</code> no TinyCore, "Disco 0" no Windows). Ele é salvo automaticamente no armazenamento do navegador e <b>sobrevive a reinícios, a Parar e a fechar a aba</b>. Só o que for gravado ocupa espaço.</p>
+
+    <label class="check"><input id="useDisk" type="checkbox" checked> Anexar disco virtual ao iniciar</label>
+
+    <label>Tamanho (usado apenas ao criar)
+      <select id="diskSize">
+        <option value="134217728">128 MB</option>
+        <option value="268435456">256 MB</option>
+        <option value="536870912">512 MB</option>
+        <option value="1073741824">1 GB</option>
+        <option value="1610612736" selected>1,5 GB (máximo)</option>
+      </select>
+    </label>
+
+    <div class="bar"><i id="diskBar"></i></div>
+    <div id="diskStatus" class="hint">Verificando disco…</div>
+
+    <div class="buttons">
+      <button id="diskSave" disabled>💾 Salvar agora</button>
+      <button id="diskExport" disabled>⬇ Exportar .img</button>
+      <button id="diskDelete" disabled class="danger">🗑 Apagar disco</button>
+    </div>
+    <p class="hint" style="margin-top:10px">O disco é criado automaticamente na primeira vez que você iniciar a VM. Para trocar o tamanho, apague o disco e crie outro. Escolha <i>Disco rígido (.img)</i> em "Tipo da mídia" para importar uma imagem de disco pronta (até 1,5 GB).</p>
+
+    <hr style="border:0;border-top:1px solid #293241;margin:18px 0">
+
+    <h2>🔌 Pendrive virtual</h2>
+    <p class="hint">Os arquivos selecionados vão para um segundo disco FAT16 (<code>/dev/hdb</code>). Ele é montado automaticamente ao iniciar a VM.</p>
+    <label>Arquivos
+      <input id="files" type="file" multiple>
+    </label>
+    <div class="usb-row">
+      <label style="margin:0">Tamanho
+        <select id="usbSize">
+          <option value="33554432">32 MB</option>
+          <option value="67108864" selected>64 MB</option>
+          <option value="134217728">128 MB</option>
+          <option value="268435456">256 MB</option>
+        </select>
+      </label>
+      <button id="buildUsb">Preparar pendrive</button>
+    </div>
+    <div id="fileList" class="file-list">Nenhum arquivo selecionado.</div>
+    <div id="usbStatus" class="hint">O pendrive será anexado como <code>/dev/hdb</code>.</div>
+  </section>
+
+  <section class="panel screen-panel">
+    <div class="screen-title">
+      <h2>Tela da VM</h2>
+      <span>clique dentro da tela para capturar o teclado/mouse</span>
+      <button id="fullscreenBtn" type="button">⛶ Tela cheia</button>
+    </div>
+    <div id="screen_container" tabindex="0">
+      <div class="screen-text"></div>
+      <canvas style="display:none"></canvas>
+    </div>
+  </section>
+
+  <section class="panel help">
+    <h2>🪟 Como rodar uma ISO do Windows</h2>
+    <ol>
+      <li>Escolha a ISO em <b>Mídia de boot</b>. ISOs grandes são lidas aos poucos, sem carregar o arquivo inteiro na memória.</li>
+      <li>Deixe o disco virtual anexado (1,5 GB) e a ordem de boot em <b>CD primeiro</b>.</li>
+      <li>Clique em <b>Iniciar VM</b> e, quando aparecer "Press any key to boot from CD", clique na tela e aperte uma tecla.</li>
+      <li>Particione e formate o disco virtual no instalador. Quando o instalador reiniciar o sistema (ou você usar <b>Reiniciar</b>), o disco continua lá; troque a ordem para <b>Disco primeiro</b> (ou deixe em <b>Automática</b>) para dar boot do sistema instalado.</li>
+      <li>Windows 95 e alguns Windows 98 não têm CD inicializável: carregue um disquete de boot <code>.img</code> no campo <b>Disquete de boot</b> e mantenha a ISO como CD.</li>
+    </ol>
+    <p class="hint"><b>Compatibilidade honesta:</b> o v86 emula um PC x86 de 32 bits simples. Windows 95/98/ME/2000/XP costumam funcionar (lentos; o XP fica apertado em 1,5 GB). Windows Vista/7/8/10/11 normalmente <b>não</b> iniciam ou não completam a instalação neste emulador, independentemente do tamanho do disco.</p>
+
+    <h2>🌐 Como conectar o TinyCore à Internet</h2>
+    <p>Quando a VM inicia com a rede ativada, o TinyCore recebe uma placa Ethernet virtual <b>NE2000</b>. Se o DHCP não configurar sozinho, abra o terminal e execute:</p>
+    <p><code>sudo udhcpc -i eth0</code> e depois teste com <code>ping -c 3 1.1.1.1</code></p>
+    <p class="hint">Se a interface tiver outro nome, use <code>ifconfig -a</code>. A conexão passa pelo relay público do v86; ela não acessa diretamente a placa Wi-Fi do Chromebook.</p>
+
+    <h2>💾 Como instalar o TinyCore no disco virtual</h2>
+    <ol>
+      <li>Inicie com o disco anexado e abra um terminal no TinyCore.</li>
+      <li>Particione: <code>sudo fdisk /dev/hda</code> (crie uma partição primária, tipo Linux) e formate: <code>sudo mkfs.ext4 /dev/hda1</code>.</li>
+      <li>Instale o utilitário: <code>tce-load -wi tc-install</code> e rode <code>tc-install</code>, escolhendo <code>hda1</code>.</li>
+      <li>Reinicie com o botão <b>Reiniciar</b>; com a ordem <b>Automática</b>, a VM passa a dar boot pelo disco.</li>
+    </ol>
+
+    <h2>Como acessar o pendrive no TinyCore</h2>
+    <ol>
+      <li>Selecione os arquivos antes de iniciar a VM (o pendrive é montado automaticamente na hora de iniciar).</li>
+      <li>No terminal: <code>sudo mkdir -p /mnt/pendrive</code> e <code>sudo mount /dev/hdb1 /mnt/pendrive</code>.</li>
+      <li>Os arquivos estarão em <code>/mnt/pendrive</code>.</li>
+    </ol>
+    <p class="hint"><b>Importante:</b> o navegador não dá acesso direto ao sistema de arquivos do computador. O pendrive virtual é uma cópia dos arquivos selecionados, criada somente dentro da VM.</p>
+  </section>
+</main>
+
+<footer>
+  <span>Emulação por v86.</span>
+  <span>Disco e RAM da VM usam memória do navegador. Para ficar leve em Chromebooks, só os blocos gravados do disco ocupam espaço.</span>
+</footer>
+
+<script>
+(() => {
+"use strict";
+
+const $ = id => document.getElementById(id);
+const MiB = 1048576;
+const CHUNK = MiB;                 // granularidade da persistência do disco
+const MAX_DISK = 1536 * MiB;       // 1,5 GB
+const BOOT_CD = 0x123, BOOT_HD = 0x312, BOOT_FD = 0x231;
+const FLOPPY_SIZES = [163840,184320,327680,368640,737280,1228800,1474560,1720320,2949120];
+
+const ASSETS = {
+  lib:  ["https://cdn.jsdelivr.net/npm/v86/build/libv86.js", "https://unpkg.com/v86/build/libv86.js", "libv86.js"],
+  wasm: ["https://cdn.jsdelivr.net/npm/v86/build/v86.wasm", "https://unpkg.com/v86/build/v86.wasm", "v86.wasm"],
+  bios: ["https://cdn.jsdelivr.net/gh/copy/v86@master/bios/seabios.bin", "https://raw.githubusercontent.com/copy/v86/master/bios/seabios.bin", "seabios.bin"],
+  vga:  ["https://cdn.jsdelivr.net/gh/copy/v86@master/bios/vgabios.bin", "https://raw.githubusercontent.com/copy/v86/master/bios/vgabios.bin", "vgabios.bin"]
+};
+const RELAY_URL = "wss://relay.widgetry.org/";
+
+const ui = {
+  status: $("status"), msg: $("msg"), screen: $("screen_container"),
+  mediaFile: $("mediaFile"), mediaKind: $("mediaKind"), mediaInfo: $("mediaInfo"), noCd: $("noCd"), floppyFile: $("floppyFile"),
+  ram: $("ram"), bootOrder: $("bootOrder"), net: $("networkMode"), netStatus: $("networkStatus"),
+  start: $("start"), pause: $("pause"), reset: $("reset"), cad: $("cad"), stop: $("stop"),
+  saveState: $("saveState"), stateFile: $("stateFile"), stateStatus: $("stateStatus"),
+  useDisk: $("useDisk"), diskSize: $("diskSize"), diskBar: $("diskBar"), diskStatus: $("diskStatus"),
+  diskSave: $("diskSave"), diskExport: $("diskExport"), diskDelete: $("diskDelete"),
+  files: $("files"), usbSize: $("usbSize"), buildUsb: $("buildUsb"), fileList: $("fileList"), usbStatus: $("usbStatus"),
+  fullscreen: $("fullscreenBtn")
+};
+
+let emulator = null;
+let starting = false;
+let busy = false;           // operação longa de disco em andamento (importar/exportar/apagar/salvar)
+let diskAttached = false;   // disco persistente anexado à VM em execução
+let mediaFile = null, floppyFile = null;
+let embeddedIso = null;
+let usbBuffer = null, usbSig = "";
+
+/* ---------- utilidades ---------- */
+function setStatus(t) { ui.status.textContent = t; }
+function note(text, kind) { ui.msg.textContent = text || ""; ui.msg.className = "msg " + (kind || ""); ui.msg.hidden = !text; }
+const tick = () => new Promise(r => setTimeout(r, 0));
+function fmt(n) {
+  if (n < 1024) return n + " B";
+  if (n < MiB) return (n / 1024).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + " KB";
+  if (n < 1073741824) return (n / MiB).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + " MB";
+  return (n / 1073741824).toLocaleString("pt-BR", { maximumFractionDigits: 2 }) + " GB";
+}
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+const stamp = () => new Date().toISOString().replace(/[:.]/g, "-");
+
+/* ---------- carregamento da biblioteca v86 e arquivos de apoio (com fallback) ---------- */
+let v86Promise = null;
+function loadScript(url) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = url; s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => { s.remove(); reject(new Error("falha em " + url)); };
+    document.head.appendChild(s);
+  });
+}
+function loadV86() {
+  if (window.V86 || window.V86Starter) return Promise.resolve(window.V86 || window.V86Starter);
+  if (!v86Promise) {
+    v86Promise = (async () => {
+      for (const url of ASSETS.lib) {
+        try { await loadScript(url); } catch { continue; }
+        const V = window.V86 || window.V86Starter;
+        if (V) return V;
+      }
+      throw new Error("Não foi possível carregar a biblioteca v86. Verifique a internet ou coloque libv86.js, v86.wasm, seabios.bin e vgabios.bin na mesma pasta deste arquivo.");
+    })().catch(e => { v86Promise = null; throw e; });
+  }
+  return v86Promise;
+}
+const assetCache = {};
+async function fetchAsset(key) {
+  if (assetCache[key]) return assetCache[key];
+  for (const url of ASSETS[key]) {
+    try {
+      const r = await fetch(url, { cache: "force-cache" });
+      if (r.ok) return (assetCache[key] = await r.arrayBuffer());
+    } catch { /* tenta o próximo */ }
+  }
+  throw new Error("Não foi possível baixar o arquivo de apoio do v86 (" + key + ").");
+}
+let wasmUrl = null;
+async function getWasmUrl() {
+  if (wasmUrl) return wasmUrl;
+  const buf = await fetchAsset("wasm");
+  return (wasmUrl = URL.createObjectURL(new Blob([buf], { type: "application/wasm" })));
+}
+
+/* ---------- ISO embutida ---------- */
+async function getEmbeddedIso() {
+  if (embeddedIso) return embeddedIso;
+  const node = $("tinycoreIso");
+  if (!node) throw new Error("Esta versão não traz ISO embutida. Selecione uma ISO em \"Mídia de boot\" (ou marque \"Sem CD\" para iniciar só pelo disco).");
+  if (!/1252|8859-1/i.test(document.characterSet || "")) throw new Error("O arquivo foi aberto com a codificação errada (" + document.characterSet + "). Abra-o diretamente no Chrome (arquivo local), sem passar por um servidor que force UTF-8, ou use a versão lite e escolha uma ISO.");
+  if (typeof DecompressionStream === "undefined") throw new Error("Este navegador não suporta DecompressionStream. Atualize o Chrome/ChromeOS.");
+  const text = node.textContent;
+  // tabela caractere -> byte, igual à decodificação windows-1252 feita pelo navegador
+  const dec = new TextDecoder("windows-1252"), rev = new Uint8Array(0x2200);
+  for (let b = 0; b < 256; b++) rev[dec.decode(Uint8Array.of(b)).charCodeAt(0)] = b;
+  const out = new Uint8Array(text.length);
+  let n = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c === 126) {                       // "~" = escape: 0->NUL, 1->CR, 2->"<", 3->"~"
+      const k = text.charCodeAt(++i);
+      out[n++] = k === 48 ? 0 : k === 49 ? 13 : k === 50 ? 60 : 126;
+    } else out[n++] = rev[c];
+  }
+  let buf;
+  try {
+    buf = await new Response(new Blob([out.subarray(0, n)]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer();
+  } catch (err) {
+    throw new Error("Falha ao descompactar a ISO embutida (arquivo corrompido ou aberto com codificação incorreta).");
+  }
+  const sig = new Uint8Array(buf, 0x8001, 5);
+  if (String.fromCharCode(...sig) !== "CD001") throw new Error("A ISO embutida está inválida.");
+  node.textContent = "";   // libera a memória do texto
+  return (embeddedIso = buf);
+}
+
+/* ---------- IndexedDB (persistência do disco) ---------- */
+let dbPromise = null;
+function getDB() {
+  if (!dbPromise) {
+    dbPromise = new Promise((res, rej) => {
+      if (!window.indexedDB) return rej(new Error("IndexedDB indisponível neste navegador/modo."));
+      const r = indexedDB.open("tinycore-web-vm", 1);
+      r.onupgradeneeded = () => { const db = r.result; db.createObjectStore("meta"); db.createObjectStore("chunks"); };
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+      r.onblocked = () => rej(new Error("Banco de dados bloqueado por outra aba."));
+    }).catch(e => { dbPromise = null; throw e; });
+  }
+  return dbPromise;
+}
+const reqP = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+const txDone = tx => new Promise((res, rej) => {
+  tx.oncomplete = () => res();
+  tx.onerror = () => rej(tx.error);
+  tx.onabort = () => rej(tx.error || new Error("Transação cancelada."));
+});
+
+/* ---------- disco virtual ---------- */
+const disk = {
+  buf: null, size: 0, n: 0, hA: null, hB: null, stored: null,
+  loaded: false, exists: false, persist: true, usedChunks: 0, scanPos: 0, busy: false, queued: false
+};
+let hA = 0, hB = 0, hNZ = false;
+let ZA = 0, ZB = 0;
+let diskQueue = Promise.resolve();
+const enqueue = fn => { const p = diskQueue.then(fn); diskQueue = p.catch(() => {}); return p; };
+let scanTimer = null, lastHint = 0, diskErrorShown = false;
+
+function hashU32(u) {
+  let a = 0x811c9dc5 | 0, b = 0x9747b28c | 0, nz = 0;
+  for (let k = 0; k < u.length; k++) {
+    const v = u[k]; nz |= v;
+    a = Math.imul(a ^ v, 16777619);
+    b = Math.imul(b + v | 0, 0x9E3779B1) ^ (b >>> 13);
+  }
+  hA = a; hB = b; hNZ = nz !== 0;
+}
+function hashChunk(i) { hashU32(new Uint32Array(disk.buf, i * CHUNK, CHUNK >> 2)); }
+
+function allocDisk(size) {
+  if (size % CHUNK || size < CHUNK || size > MAX_DISK) throw new Error("Tamanho de disco inválido.");
+  let buf;
+  try { buf = new ArrayBuffer(size); }
+  catch { throw new Error("Memória insuficiente para um disco de " + fmt(size) + ". Escolha um tamanho menor."); }
+  if (!ZA) { hashU32(new Uint32Array(CHUNK >> 2)); ZA = hA; ZB = hB; }
+  disk.buf = buf; disk.size = size; disk.n = size / CHUNK;
+  disk.hA = new Int32Array(disk.n).fill(ZA);
+  disk.hB = new Int32Array(disk.n).fill(ZB);
+  disk.stored = new Uint8Array(disk.n);
+  disk.scanPos = 0; disk.usedChunks = 0; disk.loaded = false;
+}
+
+async function peekDisk() {
+  try {
+    const db = await getDB();
+    const info = await reqP(db.transaction("meta").objectStore("meta").get("info"));
+    if (!info) { if (!disk.loaded) disk.exists = false; return; }
+    const cnt = await reqP(db.transaction("chunks").objectStore("chunks").count());
+    disk.exists = true; disk.persist = true;
+    if (!disk.loaded) { disk.size = info.size; disk.usedChunks = cnt; }
+  } catch (e) {
+    disk.persist = false;
+    if (!disk.loaded) disk.exists = false;
+    console.warn(e);
+  }
+}
+
+async function wipeStore(info) {
+  const db = await getDB();
+  const tx = db.transaction(["meta", "chunks"], "readwrite");
+  tx.objectStore("chunks").clear();
+  if (info) tx.objectStore("meta").put(info, "info"); else tx.objectStore("meta").clear();
+  await txDone(tx);
+}
+
+async function createDisk(size) {
+  allocDisk(size);
+  try {
+    await wipeStore({ size, created: Date.now(), v: 1 });
+    disk.persist = true;
+  } catch (e) {
+    disk.persist = false;
+    note("Armazenamento do navegador indisponível: o disco funcionará só nesta sessão e será perdido ao fechar a aba.", "warn");
+  }
+  disk.loaded = true; disk.exists = true;
+}
+
+async function loadDisk(onProg) {
+  if (disk.loaded) return;
+  const db = await getDB();
+  const info = await reqP(db.transaction("meta").objectStore("meta").get("info"));
+  if (!info) throw new Error("Disco não encontrado.");
+  allocDisk(info.size);
+  await new Promise((res, rej) => {
+    let n = 0;
+    const cur = db.transaction("chunks").objectStore("chunks").openCursor();
+    cur.onsuccess = () => {
+      const c = cur.result;
+      if (!c) return res();
+      const i = c.key;
+      if (Number.isInteger(i) && i >= 0 && i < disk.n) {
+        const src = new Uint8Array(c.value);
+        new Uint8Array(disk.buf, i * CHUNK, Math.min(CHUNK, src.length)).set(src.length > CHUNK ? src.subarray(0, CHUNK) : src);
+        hashChunk(i);
+        disk.hA[i] = hA; disk.hB[i] = hB; disk.stored[i] = 1;
+        if (onProg && ++n % 16 === 0) onProg(n);
+      }
+      c.continue();
+    };
+    cur.onerror = () => rej(cur.error);
+  });
+  let used = 0; for (let i = 0; i < disk.n; i++) used += disk.stored[i];
+  disk.usedChunks = used; disk.loaded = true; disk.exists = true; disk.persist = true;
+}
+
+async function commit(pend) {
+  if (!pend.length) return;
+  const db = await getDB();
+  const tx = db.transaction(["chunks", "meta"], "readwrite");
+  const cs = tx.objectStore("chunks");
+  for (const p of pend) { if (p.zero) cs.delete(p.i); else cs.put(p.data, p.i); }
+  tx.objectStore("meta").put(Date.now(), "modified");
+  await txDone(tx);
+  for (const p of pend) {
+    disk.hA[p.i] = p.a; disk.hB[p.i] = p.b;
+    const was = disk.stored[p.i], now = p.zero ? 0 : 1;
+    disk.stored[p.i] = now; disk.usedChunks += now - was;
+  }
+  updateDiskUI();
+}
+
+async function scanChunks(count) {
+  if (!disk.loaded || !disk.persist) return;
+  const pend = [];
+  for (let k = 0; k < count; k++) {
+    const i = disk.scanPos; disk.scanPos = (i + 1) % disk.n;
+    hashChunk(i);
+    if (hA === disk.hA[i] && hB === disk.hB[i]) continue;
+    pend.push({ i, a: hA, b: hB, zero: !hNZ, data: hNZ ? disk.buf.slice(i * CHUNK, (i + 1) * CHUNK) : null });
+  }
+  await commit(pend);
+}
+
+function reportDiskError(e) {
+  console.error(e);
+  if (diskErrorShown) return;
+  diskErrorShown = true;
+  note("Não foi possível salvar o disco no navegador (armazenamento cheio ou bloqueado?). Use \"Exportar .img\" para guardar uma cópia. Detalhe: " + (e && e.message || e), "err");
+}
+
+function flushDisk(onProg) {
+  if (!disk.loaded || !disk.persist) return Promise.resolve();
+  return enqueue(async () => {
+    disk.busy = true;
+    try {
+      let done = 0;
+      while (done < disk.n) {
+        const step = Math.min(48, disk.n - done);
+        await scanChunks(step);
+        done += step;
+        if (onProg) onProg(done / disk.n);
+        await tick();
+      }
+      diskErrorShown = false;
+    } finally { disk.busy = false; }
+  });
+}
+
+function startScanner() {
+  stopScanner();
+  scanTimer = setInterval(() => {
+    if (!emulator || !diskAttached || !disk.loaded || !disk.persist || disk.busy || disk.queued) return;
+    disk.queued = true;
+    const boost = performance.now() - lastHint < 5000;
+    enqueue(async () => {
+      disk.queued = false; disk.busy = true;
+      try { await scanChunks(boost ? 32 : 8); } catch (e) { reportDiskError(e); } finally { disk.busy = false; }
+    });
+  }, 300);
+}
+function stopScanner() { if (scanTimer) { clearInterval(scanTimer); scanTimer = null; } }
+
+function diskHasMBR() {
+  if (!disk.buf) return false;
+  const v = new Uint8Array(disk.buf, 0, 512);
+  return v[510] === 0x55 && v[511] === 0xAA;
+}
+
+function updateDiskUI() {
+  const running = !!emulator || starting;
+  const exists = disk.exists || disk.loaded;
+  if (exists) {
+    const used = disk.usedChunks * CHUNK;
+    ui.diskBar.style.width = Math.min(100, disk.size ? used / disk.size * 100 : 0) + "%";
+    ui.diskStatus.innerHTML = `Disco de <b>${fmt(disk.size)}</b> — ocupando ≈ <b>${fmt(used)}</b> no navegador. ` +
+      (disk.persist ? (diskAttached ? "Salvamento automático ativo." : "Salvo no navegador.") : "<b>Somente nesta sessão (sem armazenamento).</b>");
+  } else {
+    ui.diskBar.style.width = "0";
+    ui.diskStatus.textContent = "Nenhum disco criado ainda. Ele será criado ao iniciar a VM com a opção acima marcada.";
+  }
+  ui.diskSize.disabled = exists || running || busy;
+  ui.useDisk.disabled = running;
+  ui.diskSave.disabled = !(disk.loaded && disk.persist) || busy;
+  ui.diskExport.disabled = !exists || busy || starting;
+  ui.diskDelete.disabled = !exists || running || busy;
+}
+
+async function importImage(file, onProg) {
+  const size = Math.ceil(file.size / CHUNK) * CHUNK;
+  if (size > MAX_DISK) throw new Error("A imagem tem " + fmt(file.size) + " e o disco virtual aceita no máximo 1,5 GB.");
+  allocDisk(size);
+  const step = 8 * MiB;
+  for (let o = 0; o < file.size; o += step) {
+    const part = new Uint8Array(await file.slice(o, Math.min(o + step, file.size)).arrayBuffer());
+    new Uint8Array(disk.buf, o, part.length).set(part);
+    if (onProg) onProg(o / file.size);
+    await tick();
+  }
+  try { await wipeStore({ size, created: Date.now(), v: 1, imported: file.name }); disk.persist = true; }
+  catch { disk.persist = false; note("Armazenamento do navegador indisponível: a imagem funcionará só nesta sessão.", "warn"); }
+  disk.loaded = true; disk.exists = true;
+  await flushDisk(p => onProg && onProg(p, true));
+}
+
+async function exportDisk() {
+  let handle = null;
+  const name = `disco-virtual-${stamp()}.img`;
+  if (window.showSaveFilePicker) {
+    try {
+      handle = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: "Imagem de disco", accept: { "application/octet-stream": [".img"] } }] });
+    } catch (e) { if (e && e.name === "AbortError") return; handle = null; }
+  }
+  const wasRunning = emulator && emulator.is_running();
+  busy = true; updateDiskUI(); setButtons();
+  try {
+    if (wasRunning) await emulator.stop();
+    if (!disk.loaded) { setStatus("Carregando disco…"); await loadDisk(); }
+    const step = 32 * MiB;
+    if (handle) {
+      const w = await handle.createWritable();
+      for (let o = 0; o < disk.size; o += step) {
+        await w.write(new Uint8Array(disk.buf, o, Math.min(step, disk.size - o)));
+        note(`Exportando… ${Math.round(o / disk.size * 100)}%`);
+      }
+      await w.close();
+    } else {
+      const parts = [];
+      for (let o = 0; o < disk.size; o += step) {
+        parts.push(new Blob([new Uint8Array(disk.buf, o, Math.min(step, disk.size - o))]));
+        await tick();
+      }
+      const url = URL.createObjectURL(new Blob(parts, { type: "application/octet-stream" }));
+      const a = document.createElement("a"); a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }
+    note("Disco exportado: " + name, "ok");
+  } finally {
+    if (wasRunning && emulator) { try { await emulator.run(); } catch {} }
+    busy = false; updateDiskUI(); setButtons();
+    setStatus(emulator ? (emulator.is_running() ? "Rodando" : "Pausada") : "Parada");
+  }
+}
+
+/* ---------- detecção de mídia ---------- */
+async function detectKind(file, forced) {
+  if (forced && forced !== "auto") return forced;
+  if (FLOPPY_SIZES.includes(file.size)) return "floppy";
+  try {
+    const h = new Uint8Array(await file.slice(0x8000, 0x8006).arrayBuffer());
+    if (h[1] === 0x43 && h[2] === 0x44 && h[3] === 0x30 && h[4] === 0x30 && h[5] === 0x31) return "cd"; // "CD001"
+  } catch {}
+  if (/\.iso$/i.test(file.name)) return "cd";
+  return "hd";
+}
+const KIND_NAMES = { cd: "CD/DVD-ROM", floppy: "disquete", hd: "disco rígido" };
+
+async function updateMediaInfo() {
+  if (!mediaFile) {
+    ui.mediaInfo.textContent = $("tinycoreIso")
+      ? "Sem arquivo selecionado: será usado o TinyCore embutido neste arquivo."
+      : "Selecione uma ISO ou IMG (esta versão não traz ISO embutida) ou marque \"Sem CD\" para iniciar só pelo disco.";
+    return;
+  }
+  const f = mediaFile;
+  const kind = await detectKind(f, ui.mediaKind.value);
+  if (f !== mediaFile) return;
+  let t = `${f.name} — ${fmt(f.size)} — tratado como ${KIND_NAMES[kind]}.`;
+  if (kind === "hd") t += " Ao iniciar, será importado para o disco virtual (substitui o disco atual).";
+  if (/win(dows)?[\s._-]*(vista|7|8|10|11|server)/i.test(f.name)) t += " ⚠ Windows Vista/7/8/10/11 normalmente não funcionam no v86 (veja a seção de ajuda).";
+  ui.mediaInfo.textContent = t;
+}
+
+/* ---------- pendrive FAT16 ---------- */
+function le16(a, o, v) { a[o] = v & 255; a[o + 1] = (v >>> 8) & 255; }
+function le32(a, o, v) { a[o] = v & 255; a[o + 1] = (v >>> 8) & 255; a[o + 2] = (v >>> 16) & 255; a[o + 3] = (v >>> 24) & 255; }
+function fatNameChecksum(b) { let s = 0; for (let i = 0; i < 11; i++) s = ((s & 1) ? 0x80 : 0) + (s >> 1) + b[i]; return s & 255; }
+function makeShortName(longName, used) {
+  let base = longName.replace(/\.[^.]*$/, "").toUpperCase().replace(/[^A-Z0-9_$%'-]/g, "");
+  let ext = (longName.match(/\.([^.]+)$/)?.[1] || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!base) base = "FILE";
+  base = base.slice(0, 8); ext = ext.slice(0, 3);
+  let c = (base + "        ").slice(0, 8) + (ext + "   ").slice(0, 3);
+  if (!used.has(c)) { used.add(c); return c; }
+  for (let i = 1; i < 10000; i++) {
+    const suf = "~" + i, b = base.slice(0, 8 - suf.length) + suf;
+    c = (b + "        ").slice(0, 8) + (ext + "   ").slice(0, 3);
+    if (!used.has(c)) { used.add(c); return c; }
+  }
+  throw new Error("Não foi possível criar um nome FAT único para " + longName);
+}
+function lfnEntries(name, short11) {
+  const chars = []; for (let i = 0; i < name.length; i++) chars.push(name.charCodeAt(i));
+  const chunks = []; for (let i = 0; i < chars.length; i += 13) chunks.push(chars.slice(i, i + 13));
+  const chk = fatNameChecksum([...short11].map(c => c.charCodeAt(0)));
+  const out = [];
+  for (let k = chunks.length - 1; k >= 0; k--) {
+    const e = new Uint8Array(32); e.fill(0xFF);
+    e[0] = (k === chunks.length - 1 ? 0x40 : 0) + (k + 1); e[11] = 0x0F; e[12] = 0; e[13] = chk; le16(e, 26, 0);
+    const ch = chunks[k];
+    const put = (start, idxs) => idxs.forEach((idx, j) => le16(e, start + j * 2, idx < ch.length ? ch[idx] : (idx === ch.length ? 0 : 0xFFFF)));
+    put(1, [0, 1, 2, 3, 4]); put(14, [5, 6, 7, 8, 9, 10, 11]); put(28, [12]);
+    out.push(e);
+  }
+  return out;
+}
+function dosDateTime(ms) {
+  const d = new Date(ms || Date.now());
+  const y = Math.min(2107, Math.max(1980, d.getFullYear()));
+  return {
+    date: ((y - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate(),
+    time: (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1)
+  };
+}
+
+async function buildFat16(files, totalBytes) {
+  const S = 512, PART = 2048;
+  const totalSectors = Math.floor(totalBytes / S);
+  const partSectors = totalSectors - PART;
+  const reserved = 1, fats = 2, rootEntries = 512;
+  const rootSectors = Math.ceil(rootEntries * 32 / S);
+
+  let spc = 0, spf = 0, clusters = 0;
+  for (const c of [1, 2, 4, 8, 16, 32, 64]) {
+    let f = 1, cl = 0;
+    for (let i = 0; i < 8; i++) {
+      cl = Math.floor((partSectors - reserved - rootSectors - fats * f) / c);
+      const need = Math.ceil((cl + 2) * 2 / S);
+      if (need === f) break;
+      f = need;
+    }
+    if (cl >= 4085 && cl <= 65524) { spc = c; spf = f; clusters = cl; break; }
+  }
+  if (!spc) throw new Error("Tamanho do pendrive incompatível com FAT16.");
+  const clBytes = spc * S;
+
+  const img = new Uint8Array(totalSectors * S);
+  const enc = new TextEncoder();
+
+  // MBR
+  img[0x1BE] = 0x00; img[0x1BF] = 0x01; img[0x1C0] = 0x01; img[0x1C1] = 0x00;
+  img[0x1C2] = 0x0E; img[0x1C3] = 0xFE; img[0x1C4] = 0xFF; img[0x1C5] = 0xFF;
+  le32(img, 0x1C6, PART); le32(img, 0x1CA, partSectors); le16(img, 510, 0xAA55);
+
+  // Boot sector / BPB
+  const b = PART * S;
+  img[b] = 0xEB; img[b + 1] = 0x3C; img[b + 2] = 0x90;
+  img.set(enc.encode("MSDOS5.0"), b + 3);
+  le16(img, b + 11, S); img[b + 13] = spc; le16(img, b + 14, reserved);
+  img[b + 16] = fats; le16(img, b + 17, rootEntries);
+  if (partSectors < 65536) le16(img, b + 19, partSectors); else le32(img, b + 32, partSectors);
+  img[b + 21] = 0xF8; le16(img, b + 22, spf); le16(img, b + 24, 32); le16(img, b + 26, 64);
+  le32(img, b + 28, PART);
+  img[b + 36] = 0x80; img[b + 38] = 0x29; le32(img, b + 39, 0x54494E59);
+  img.set(enc.encode("TINYCORE USB"), b + 43);
+  for (let i = 55; i < 54; i++) {}
+  img.set(enc.encode("FAT16   "), b + 54);
+  img[b + 510] = 0x55; img[b + 511] = 0xAA;
+
+  const fat1 = (PART + reserved) * S, fat2 = fat1 + spf * S;
+  const root = fat2 + spf * S, rootEnd = root + rootSectors * S, data = rootEnd;
+  const setFat = (base, cl, v) => le16(img, base + cl * 2, v);
+  for (const base of [fat1, fat2]) { setFat(base, 0, 0xFFF8); setFat(base, 1, 0xFFFF); }
+
+  let next = 2, rootOff = root;
+  const used = new Set();
+  for (const f of files) {
+    const need = f.size > 0 ? Math.ceil(f.size / clBytes) : 0;
+    if (next + need > clusters + 2) throw new Error("Os arquivos não cabem no pendrive virtual. Escolha um tamanho maior.");
+    const short = makeShortName(f.name, used);
+    const lfns = lfnEntries(f.name, short);
+    if (rootOff + (lfns.length + 1) * 32 > rootEnd) throw new Error("Arquivos demais para a pasta raiz do pendrive (máx. ~500 entradas).");
+    for (const e of lfns) { img.set(e, rootOff); rootOff += 32; }
+
+    const eoff = rootOff; rootOff += 32;
+    for (let i = 0; i < 11; i++) img[eoff + i] = short.charCodeAt(i);
+    img[eoff + 11] = 0x20;
+    const dt = dosDateTime(f.lastModified);
+    le16(img, eoff + 14, dt.time); le16(img, eoff + 16, dt.date); le16(img, eoff + 18, dt.date);
+    le16(img, eoff + 22, dt.time); le16(img, eoff + 24, dt.date);
+
+    if (need > 0) {
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      const first = next;
+      img.set(bytes, data + (first - 2) * clBytes);
+      for (let i = 0; i < need; i++) {
+        const cl = first + i, nx = i === need - 1 ? 0xFFFF : cl + 1;
+        setFat(fat1, cl, nx); setFat(fat2, cl, nx);
+      }
+      next += need;
+      le16(img, eoff + 26, first);
+    }
+    le32(img, eoff + 28, f.size);
+  }
+  return img.buffer;
+}
+
+function usbSignature() {
+  return [...ui.files.files].map(f => f.name + ":" + f.size + ":" + f.lastModified).join("|") + "#" + ui.usbSize.value;
+}
+async function prepareUsb() {
+  const fs = [...ui.files.files];
+  if (!fs.length) throw new Error("Selecione pelo menos um arquivo.");
+  ui.usbStatus.textContent = "Criando imagem FAT16…";
+  usbBuffer = await buildFat16(fs, Number(ui.usbSize.value));
+  usbSig = usbSignature();
+  ui.usbStatus.innerHTML = `Pendrive pronto: ${fmt(usbBuffer.byteLength)}. Será anexado como <code>/dev/hdb</code>.`;
+}
+ui.files.addEventListener("change", () => {
+  const fs = [...ui.files.files];
+  ui.fileList.innerHTML = fs.length
+    ? fs.map(f => `<div class="file-item"><b>${escapeHtml(f.name)}</b> — ${fmt(f.size)}</div>`).join("")
+    : "Nenhum arquivo selecionado.";
+  usbBuffer = null; usbSig = "";
+});
+ui.usbSize.addEventListener("change", () => { usbBuffer = null; usbSig = ""; });
+ui.buildUsb.addEventListener("click", async () => {
+  try { await prepareUsb(); } catch (e) { usbBuffer = null; usbSig = ""; ui.usbStatus.textContent = "Erro: " + e.message; }
+});
+
+/* ---------- seleção de mídia ---------- */
+ui.mediaFile.addEventListener("change", () => { mediaFile = ui.mediaFile.files[0] || null; updateMediaInfo(); });
+ui.mediaKind.addEventListener("change", updateMediaInfo);
+ui.floppyFile.addEventListener("change", () => { floppyFile = ui.floppyFile.files[0] || null; });
+
+/* ---------- botões / estado da interface ---------- */
+function setButtons() {
+  const on = !!emulator;
+  ui.start.disabled = on || starting || busy;
+  ui.pause.disabled = !on || busy;
+  ui.reset.disabled = !on || busy;
+  ui.cad.disabled = !on || busy;
+  ui.stop.disabled = !on || busy;
+  ui.saveState.disabled = !on || diskAttached || busy;
+  ui.mediaFile.disabled = ui.mediaKind.disabled = ui.noCd.disabled = ui.floppyFile.disabled = ui.ram.disabled = ui.net.disabled = ui.bootOrder.disabled = on || starting;
+  updateDiskUI();
+}
+
+function resetScreen() {
+  ui.screen.innerHTML = '<div class="screen-text"></div><canvas style="display:none"></canvas>';
+}
+
+function computeBootOrder(hasCd, hasFd) {
+  const sel = ui.bootOrder.value;
+  if (sel === "cd") return BOOT_CD;
+  if (sel === "hd") return BOOT_HD;
+  if (hasFd) return BOOT_FD;
+  if (!hasCd) return BOOT_HD;
+  if (diskAttached && diskHasMBR()) return BOOT_HD;
+  return BOOT_CD;
+}
+
+/* ---------- iniciar ---------- */
+async function startVM() {
+  if (emulator || starting || busy) return;
+  starting = true; setButtons(); note("");
+  try {
+    setStatus("Carregando…");
+    const V86 = await loadV86();
+    const [bios, vga] = await Promise.all([fetchAsset("bios"), fetchAsset("vga")]);
+    const wasm = await getWasmUrl();
+
+    let useDisk = ui.useDisk.checked;
+    let kind = null;
+    if (mediaFile && !ui.noCd.checked) kind = await detectKind(mediaFile, ui.mediaKind.value);
+
+    // imagem de disco rígido (.img): importa para o disco virtual
+    let importedFromMedia = false;
+    if (kind === "hd") {
+      await peekDisk();
+      if (disk.exists && !confirm("O disco virtual atual será SUBSTITUÍDO pela imagem \"" + mediaFile.name + "\". Continuar?")) {
+        starting = false; setButtons(); setStatus("Parada"); return;
+      }
+      setStatus("Importando imagem…");
+      await importImage(mediaFile, (p, saving) => setStatus((saving ? "Salvando imagem… " : "Importando imagem… ") + Math.round(p * 100) + "%"));
+      useDisk = true; ui.useDisk.checked = true; importedFromMedia = true;
+    }
+
+    if (useDisk && !disk.loaded) {
+      await peekDisk();
+      if (disk.exists) {
+        setStatus("Carregando disco…");
+        await loadDisk(n => setStatus("Carregando disco… " + n + " MB"));
+      } else {
+        setStatus("Criando disco…");
+        await createDisk(Number(ui.diskSize.value));
+      }
+    }
+    diskAttached = !!(useDisk && disk.buf);
+
+    // mídias
+    let cdrom = null, fda = null;
+    if (floppyFile) fda = { buffer: await floppyFile.arrayBuffer() };
+    if (!ui.noCd.checked && !importedFromMedia) {
+      if (!mediaFile) { setStatus("Preparando ISO…"); cdrom = { buffer: await getEmbeddedIso() }; }
+      else if (kind === "cd") cdrom = { buffer: mediaFile, async: true };
+      else if (kind === "floppy" && !fda) fda = { buffer: await mediaFile.arrayBuffer() };
+    }
+
+    // pendrive
+    if (ui.files.files.length && (!usbBuffer || usbSig !== usbSignature())) await prepareUsb();
+
+    setStatus("Iniciando…");
+    const opts = {
+      wasm_path: wasm,
+      memory_size: Number(ui.ram.value),
+      vga_memory_size: 8 * MiB,
+      screen_container: ui.screen,
+      bios: { buffer: bios },
+      vga_bios: { buffer: vga },
+      autostart: true,
+      boot_order: computeBootOrder(!!cdrom, !!fda),
+      disable_mouse: false
+    };
+    if (cdrom) opts.cdrom = cdrom;
+    if (fda) opts.fda = fda;
+    if (diskAttached) opts.hda = { buffer: disk.buf };
+    if (usbBuffer) opts.hdb = { buffer: usbBuffer };
+
+    if (ui.net.value === "relay") {
+      opts.net_device = { type: "ne2k", relay_url: RELAY_URL };
+      ui.netStatus.textContent = "🌐 Ethernet virtual ativada — conectando ao relay da Internet…";
+    } else {
+      ui.netStatus.textContent = "🌐 Rede desativada para esta VM.";
+    }
+
+    const e = new V86(opts);
+    emulator = e;
+    e.add_listener("emulator-ready", () => setStatus("Rodando"));
+    e.add_listener("emulator-started", () => setStatus("Rodando"));
+    e.add_listener("emulator-stopped", () => { if (emulator === e && !busy) setStatus(ui.pause.textContent === "▶ Continuar" ? "Pausada" : "Parada"); });
+    e.add_listener("ide-write-end", () => { lastHint = performance.now(); });
+
+    ui.pause.textContent = "⏸ Pausar";
+    if (diskAttached) startScanner();
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    ui.stateStatus.textContent = diskAttached
+      ? "Com o disco virtual anexado, o estado é salvo automaticamente no disco. Salvar/restaurar estado fica disponível só no modo live CD."
+      : "O estado será salvo como arquivo para você guardar no Chromebook.";
+    ui.screen.focus();
+  } catch (err) {
+    console.error(err);
+    setStatus("Erro");
+    note(err.message || String(err), "err");
+    if (emulator) { try { await emulator.destroy(); } catch {} emulator = null; resetScreen(); }
+    diskAttached = false;
+  } finally {
+    starting = false; setButtons();
+  }
+}
+
+/* ---------- controles ---------- */
+async function pauseVM() {
+  if (!emulator || busy) return;
+  try {
+    if (emulator.is_running()) {
+      await emulator.stop();
+      ui.pause.textContent = "▶ Continuar"; setStatus("Pausada");
+      if (diskAttached) flushDisk().catch(reportDiskError);
+    } else {
+      await emulator.run();
+      ui.pause.textContent = "⏸ Pausar"; setStatus("Rodando");
+    }
+  } catch (e) { note("Erro: " + e.message, "err"); }
+}
+
+// Reiniciar = botão reset do PC. Não destrói a VM: disco, mídia, pendrive e configurações continuam.
+async function resetVM() {
+  if (!emulator || busy) return;
+  const e = emulator;
+  try {
+    setStatus("Reiniciando o sistema…");
+    await e.restart();
+    if (!e.is_running()) await e.run();
+    ui.pause.textContent = "⏸ Pausar";
+    setStatus("Rodando");
+    ui.screen.focus();
+  } catch (err) {
+    console.error(err);
+    note("Erro ao reiniciar: " + err.message, "err");
+    setStatus("Erro");
+  }
+}
+
+function sendCAD() {
+  if (!emulator) return;
+  // Ctrl↓ Alt↓ Del↓ Del↑ Alt↑ Ctrl↑
+  try { emulator.keyboard_send_scancodes([0x1D, 0x38, 0xE0, 0x53, 0xE0, 0xD3, 0xB8, 0x9D]); } catch (e) { note("Não foi possível enviar Ctrl+Alt+Del.", "err"); }
+}
+
+async function stopVM() {
+  if (!emulator || busy) return;
+  const e = emulator;
+  busy = true; setButtons(); setStatus("Parando…");
+  try {
+    try { await e.stop(); } catch {}
+    stopScanner();
+    if (diskAttached) {
+      await flushDisk(p => setStatus("Salvando disco… " + Math.round(p * 100) + "%")).catch(reportDiskError);
+    }
+    try { await e.destroy(); } catch {}
+  } finally {
+    emulator = null; diskAttached = false; busy = false;
+    resetScreen();
+    ui.pause.textContent = "⏸ Pausar";
+    setStatus("Parada");
+    setButtons();
+    if (disk.loaded && disk.persist) note("VM parada. O disco virtual foi salvo.", "ok");
+  }
+}
+
+ui.start.addEventListener("click", startVM);
+ui.pause.addEventListener("click", pauseVM);
+ui.reset.addEventListener("click", resetVM);
+ui.cad.addEventListener("click", sendCAD);
+ui.stop.addEventListener("click", stopVM);
+
+/* ---------- disco: botões ---------- */
+ui.diskSave.addEventListener("click", async () => {
+  busy = true; setButtons();
+  try {
+    await flushDisk(p => note("Salvando disco… " + Math.round(p * 100) + "%"));
+    note("Disco salvo no navegador.", "ok");
+  } catch (e) { reportDiskError(e); }
+  finally { busy = false; setButtons(); }
+});
+ui.diskExport.addEventListener("click", async () => {
+  try { await exportDisk(); } catch (e) { note("Erro ao exportar: " + e.message, "err"); busy = false; setButtons(); }
+});
+ui.diskDelete.addEventListener("click", async () => {
+  if (emulator || busy) return;
+  if (!confirm("Apagar o disco virtual? Tudo que está instalado nele será perdido.")) return;
+  busy = true; setButtons();
+  try {
+    stopScanner();
+    try { await wipeStore(null); } catch {}
+    disk.buf = null; disk.loaded = false; disk.exists = false; disk.size = 0; disk.usedChunks = 0;
+    note("Disco virtual apagado.", "ok");
+  } finally { busy = false; setButtons(); }
+});
+
+/* ---------- estado da VM (modo live CD, sem disco) ---------- */
+ui.saveState.addEventListener("click", async () => {
+  if (!emulator || diskAttached) return;
+  ui.saveState.disabled = true;
+  try {
+    ui.stateStatus.textContent = "Salvando o estado da VM… Isso pode levar algum tempo.";
+    const wasRunning = emulator.is_running();
+    if (wasRunning) await emulator.stop();
+    const state = await emulator.save_state();
+    const url = URL.createObjectURL(new Blob([state], { type: "application/octet-stream" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = `TinyCore-${stamp()}.v86state`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    ui.stateStatus.textContent = `Estado salvo: ${fmt(state.byteLength)}. Guarde esse arquivo no Chromebook.`;
+    if (wasRunning) { await emulator.run(); ui.pause.textContent = "⏸ Pausar"; setStatus("Rodando"); }
+  } catch (e) {
+    console.error(e);
+    ui.stateStatus.textContent = "Erro ao salvar estado: " + e.message;
+    try { await emulator.run(); ui.pause.textContent = "⏸ Pausar"; setStatus("Rodando"); } catch {}
+  } finally { ui.saveState.disabled = !emulator || diskAttached; }
+});
+
+ui.stateFile.addEventListener("change", async () => {
+  const file = ui.stateFile.files[0];
+  if (!file) return;
+  if (!emulator) { ui.stateStatus.textContent = "Inicie a VM primeiro (sem disco virtual) com a mesma configuração usada para criar o estado."; ui.stateFile.value = ""; return; }
+  if (diskAttached) { ui.stateStatus.textContent = "Restaurar estado só está disponível sem disco virtual anexado."; ui.stateFile.value = ""; return; }
+  try {
+    ui.stateStatus.textContent = "Lendo arquivo de estado…";
+    const state = await file.arrayBuffer();
+    if (emulator.is_running()) await emulator.stop();
+    await emulator.restore_state(state);
+    ui.stateStatus.textContent = `Estado restaurado: ${file.name}`;
+    await emulator.run();
+    ui.pause.textContent = "⏸ Pausar"; setStatus("Estado restaurado — Rodando");
+  } catch (e) {
+    console.error(e);
+    ui.stateStatus.textContent = "Erro ao restaurar estado: " + e.message;
+    try { await emulator.run(); ui.pause.textContent = "⏸ Pausar"; } catch {}
+  } finally { ui.stateFile.value = ""; }
+});
+
+/* ---------- tela cheia ---------- */
+ui.fullscreen.addEventListener("click", async () => {
+  try {
+    if (!document.fullscreenElement) await ui.screen.requestFullscreen();
+    else await document.exitFullscreen();
+  } catch { note("O navegador não permitiu a tela cheia. Tente novamente pelo botão do Chrome.", "warn"); }
+});
+document.addEventListener("fullscreenchange", () => {
+  ui.fullscreen.textContent = document.fullscreenElement ? "⛶ Sair da tela cheia" : "⛶ Tela cheia";
+});
+
+/* ---------- ciclo de vida da página ---------- */
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && emulator && diskAttached) flushDisk().catch(reportDiskError);
+});
+window.addEventListener("beforeunload", e => {
+  if (emulator && diskAttached) { e.preventDefault(); e.returnValue = ""; }
+});
+
+/* ---------- inicialização ---------- */
+(async () => {
+  setButtons();
+  updateMediaInfo();
+  await peekDisk();
+  updateDiskUI();
+  // pré-carrega a biblioteca em segundo plano para o "Iniciar" ser mais rápido
+  (window.requestIdleCallback || setTimeout)(() => { loadV86().catch(() => {}); });
+})();
+})();
+</script>
+</body>
+</html>
